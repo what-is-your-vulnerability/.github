@@ -45,17 +45,17 @@ TAKI 개발 저장소(엔진 `Threat-Analysis-Knowledge-Intelligence`, 서버 `t
 - 인프라·CI·배포 파일(`.github/`, `deploy/`, `Dockerfile`, `Jenkinsfile`)은 `CODEOWNERS`에 따라 인프라 담당이 리뷰합니다. 승인을 필수로 할지는 **합의 필요**입니다.
 - 리뷰 지적 사항은 해결한 뒤 병합합니다.
 
-## 4. 커밋 메시지 (제안, 합의 필요)
+## 4. 커밋 메시지와 PR 제목 (제안, 합의 필요)
 
-`종류: 변경 내용 (#이슈번호)` 형식을 제안합니다.
+`종류: 변경 내용 [KAN-번호]` 형식을 제안합니다. Jira는 제목에 `KAN-번호`가 있으면 작업과 자동으로 연결하므로 Jira에서 찾기 쉽습니다. 브랜치 이름의 번호는 GitHub 이슈 번호를 그대로 씁니다.
 
 ```text
-feat: 진단 요청 API 추가 (#38)
-fix: 작업 상태 조회 오류 수정 (#41)
-chore: CI에 pre-commit 실행 추가 (#45)
+feat: 진단 요청 API 추가 [KAN-123]
+fix: 작업 상태 조회 오류 수정 [KAN-124]
+chore: CI에 pre-commit 실행 추가 [KAN-125]
 ```
 
-종류는 `feat`, `fix`, `refactor`, `docs`, `chore`, `test`를 씁니다. 합의되면 이 절을 확정합니다.
+종류는 `feat`, `fix`, `refactor`, `docs`, `chore`, `test`를 씁니다. Jira 작업이 없는 변경은 번호를 생략합니다. 합의되면 이 절을 확정합니다.
 
 ## 5. 비밀값과 평가 자료
 
