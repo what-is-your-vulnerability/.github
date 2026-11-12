@@ -40,6 +40,7 @@ TAKI 개발 저장소(엔진 `Threat-Analysis-Knowledge-Intelligence`, 서버 `t
 
 - 템플릿(`PULL_REQUEST_TEMPLATE.md`)의 관련 이슈, 변경 내용, 검증 결과, 미검증 항목, 다른 파트에 미치는 영향을 채웁니다.
 - 미완성 작업은 Draft PR로 공유합니다.
+- PR을 올릴 때 Assignees에 작성자를, Reviewers에 리뷰할 사람을 지정합니다. 인프라 파일을 바꾸면 `CODEOWNERS`에 따라 인프라 담당이 리뷰어로 자동 지정됩니다.
 - 병합 조건: CI 검사 `test` 통과. `main` PR은 `main-source-guard`도 통과해야 합니다. **적용됨**
 - 리뷰 승인 수: 현재 0입니다. 1명으로 올릴지는 **합의 필요**입니다.
 - 인프라·CI·배포 파일(`.github/`, `deploy/`, `Dockerfile`, `Jenkinsfile`)은 `CODEOWNERS`에 따라 인프라 담당이 리뷰합니다. 승인을 필수로 할지는 **합의 필요**입니다.
