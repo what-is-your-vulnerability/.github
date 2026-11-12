@@ -19,7 +19,7 @@ TAKI 개발 저장소(엔진 `Threat-Analysis-Knowledge-Intelligence`, 서버 `t
 | `docs/번호-설명` | 문서 | `dev` | `dev` |
 | `chore/번호-설명` | 인프라·CI·배포·설정 | `dev` | `dev` |
 
-- 번호는 저장소의 작업 순번입니다. 지금까지 쓴 방식 그대로입니다. 예: `feature/38-path-view`(엔진), `feature/01-server-from-engine`(서버). 이슈를 만들면 그 번호를 씁니다.
+- 번호는 저장소의 작업 순번이고 가능하면 붙입니다. 지금까지 쓴 방식 그대로입니다. 예: `feature/38-path-view`(엔진), `feature/01-server-from-engine`(서버). `chore/pre-commit`처럼 번호 없는 브랜치도 허용합니다.
 - 작업 하나당 브랜치 하나를 만들고, 설명은 영문 소문자와 `-`로 씁니다.
 - `main`과 `dev`에는 직접 푸시하지 않고 PR로만 반영합니다. **적용됨**(브랜치 룰셋)
 - `main`으로 가는 PR은 `dev`에서 온 것만 받습니다. `main-source-guard` 검사가 확인합니다. **적용됨**
@@ -47,7 +47,7 @@ TAKI 개발 저장소(엔진 `Threat-Analysis-Knowledge-Intelligence`, 서버 `t
 
 ## 4. 커밋 메시지와 PR 제목 (제안, 합의 필요)
 
-지금 쓰는 `종류: 변경 내용` 형식을 그대로 쓰고, 끝에 Jira 작업 번호 `[KAN-번호]`를 붙입니다. Jira는 제목에 `KAN-번호`가 있으면 작업과 자동으로 연결하므로 Jira에서 찾기 쉽습니다. 이전의 `[번호] 설명` 형식(#8~#39)은 쓰지 않습니다.
+지금 쓰는 `종류: 변경 내용` 형식을 그대로 씁니다. Jira 작업이 있으면 끝에 `[KAN-번호]`를 붙일 수 있습니다(선택). Jira는 제목에 `KAN-번호`가 있으면 작업과 자동으로 연결하므로 Jira에서 찾기 쉽습니다. 이전의 `[번호] 설명` 형식(#8~#39)은 쓰지 않습니다.
 
 ```text
 feat: 이슈별 취약 경로를 report.json paths로 내보내기 [KAN-123]
@@ -55,7 +55,7 @@ fix: CodeQL 메모리 한도 안에서 끝나게 하기 [KAN-124]
 chore: CI 워크플로와 main PR 출처 검사 추가 [KAN-125]
 ```
 
-종류는 지금까지 쓴 `feat`, `fix`, `refactor`, `chore`, `ci`, `style`, `docs`에 `test`를 더합니다. 브랜치 이름의 번호와는 별개입니다. Jira 작업이 없는 변경은 번호를 생략합니다. 합의되면 이 절을 확정합니다.
+종류는 지금까지 쓴 `feat`, `fix`, `refactor`, `chore`, `ci`, `style`, `docs`에 `test`를 더합니다. 브랜치 이름의 번호와는 별개입니다. 합의되면 이 절을 확정합니다.
 
 ## 5. 비밀값과 평가 자료
 
