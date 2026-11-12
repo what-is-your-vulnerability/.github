@@ -1,6 +1,7 @@
 ---
 name: 버그
 about: 동작이 기대와 다를 때 알립니다
+labels: bug
 title: "[버그] "
 ---
 

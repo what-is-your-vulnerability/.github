@@ -1,6 +1,7 @@
 ---
 name: 기능
 about: 새 기능이나 개선을 제안합니다
+labels: enhancement
 title: "[기능] "
 ---
 
