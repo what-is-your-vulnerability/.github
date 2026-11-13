@@ -19,5 +19,5 @@
 
 ## 저장소
 
-- [TAKI 진단 엔진](https://github.com/what-is-your-vulnerability/security-diagnosis-agent) — CLI와 정적 진단
+- [TAKI 진단 엔진](https://github.com/what-is-your-vulnerability/Threat-Analysis-Knowledge-Intelligence) — CLI와 정적 진단
 - [TAKI 서버](https://github.com/what-is-your-vulnerability/taki-server) — 로컬 API, worker, 결과 저장
