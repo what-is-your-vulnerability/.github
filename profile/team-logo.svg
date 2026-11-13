@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">너의 취약점은</title>
+  <desc id="description">A team wordmark with a red thread and star on a dark security-themed sky</desc>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1426"/>
+      <stop offset=".68" stop-color="#142039"/>
+      <stop offset="1" stop-color="#292a49"/>
+    </linearGradient>
+    <linearGradient id="thread" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb391"/>
+      <stop offset=".55" stop-color="#f77287"/>
+      <stop offset="1" stop-color="#d95d89"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#57e7d2"/>
+      <stop offset="1" stop-color="#91b9ff"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#38506a" stroke-width="1" opacity=".13"/>
+    </pattern>
+  </defs>
+
+  <rect width="512" height="512" rx="88" fill="url(#night)"/>
+  <rect width="512" height="512" rx="88" fill="url(#grid)"/>
+  <path d="M55 96V55h41m320 402h41v-41" fill="none" stroke="#5daeb0" stroke-width="3" opacity=".55"/>
+
+  <path d="M79 147C126 101 193 83 252 106s93 18 139-12c38 36 34 76 4 106-18 19-20 38 4 54 25 16 31 41 12 66" fill="none" stroke="#2a2338" stroke-width="10" stroke-linecap="round"/>
+  <path d="M79 147C126 101 193 83 252 106s93 18 139-12c38 36 34 76 4 106-18 19-20 38 4 54 25 16 31 41 12 66" fill="none" stroke="url(#thread)" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="79" cy="147" r="5" fill="#ffb391"/>
+  <circle cx="411" cy="320" r="5" fill="#d95d89"/>
+
+  <path d="m388 68 5 14 14 5-14 5-5 14-5-14-14-5 14-5z" fill="#a8e9e5"/>
+  <circle cx="119" cy="91" r="3" fill="#91b9ff"/>
+  <circle cx="342" cy="143" r="2.5" fill="#91b9ff"/>
+
+  <text x="256" y="251" fill="#f1f7ff" stroke="#122039" stroke-width="3" paint-order="stroke" font-family="Nanum Brush Script, Nanum Pen Script, serif" font-size="116" text-anchor="middle">너의</text>
+  <text x="256" y="348" fill="#f1f7ff" stroke="#122039" stroke-width="4" paint-order="stroke" font-family="BM DoHyeon, Nanum Gothic, sans-serif" font-size="85" font-weight="700" letter-spacing="-2" text-anchor="middle">취약점은</text>
+
+  <rect x="177" y="377" width="158" height="5" rx="2.5" fill="url(#accent)"/>
+  <text x="256" y="421" fill="#9beedf" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="5" text-anchor="middle">SECURITY TEAM</text>
+</svg>
