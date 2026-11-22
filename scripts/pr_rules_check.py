@@ -70,8 +70,10 @@ def field_filled(body: str, label: str) -> bool:
     return False
 
 
-def check_open_rules(pr: dict) -> list[str]:
-    """열린 PR의 형식 규칙. 어긴 항목을 '무엇을 어떻게 고치면 되는지'와 함께 돌려준다."""
+def check_open_rules(pr: dict, reviewer_candidates: list[str] | None = None) -> list[str]:
+    """열린 PR의 형식 규칙. 어긴 항목을 '무엇을 어떻게 고치면 되는지'와 함께 돌려준다.
+
+    reviewer_candidates가 있으면 그중 1명 이상이 reviewer에 있어야 한다(작성자 본인은 후보에서 제외). 그 밖의 사람은 자유롭게 추가할 수 있다."""
     out: list[str] = []
     title = pr.get("title") or ""
     body = pr.get("body") or ""
@@ -97,10 +99,19 @@ def check_open_rules(pr: dict) -> list[str]:
         if re.search(r"^- `변경 파일`\s*$", body, re.M):
             out.append("템플릿 예시 줄(`변경 파일`·`변경 함수`)이 그대로 남아 있음")
 
-    if not (pr.get("assignees") or []):
+    author = ((pr.get("user") or {}).get("login") or "").lower()
+    assignees = [(u.get("login") or "").lower() for u in pr.get("assignees") or []]
+    if not assignees:
         out.append("Assignees 미지정")
-    if not (pr.get("_reviewers") or []):
-        out.append("Reviewers 미지정")
+    elif author and author not in assignees:
+        out.append("Assignees에 작성자 `%s`가 없음(작성자를 assignee로 지정)" % ((pr.get("user") or {}).get("login")))
+
+    reviewers = [r.lower() for r in (pr.get("_reviewers") or [])]
+    eligible = [c for c in (reviewer_candidates or []) if c.lower() != author]
+    if not reviewers:
+        out.append("Reviewers 미지정" + (" (%s 중 1명 이상)" % ", ".join(eligible) if eligible else ""))
+    elif eligible and not {c.lower() for c in eligible} & set(reviewers):
+        out.append("Reviewers에 지정 대상 중 1명 이상이 없음: %s (다른 사람은 추가로 지정 가능)" % ", ".join(eligible))
     return out
 
 
@@ -278,7 +289,8 @@ def handle_pull_request(api: Api, event: dict, env: dict) -> int:
     if pr.get("state") != "open" or pr.get("draft"):
         return 0
     pr["_reviewers"] = reviewers_of(api, number, pr)
-    violations = check_open_rules(pr)
+    candidates = [x.strip() for x in (env.get("REVIEWER_CANDIDATES") or "").split(",") if x.strip()]
+    violations = check_open_rules(pr, candidates)
     sig = signature(violations)
     print("점검 #%d: %s" % (number, violations or "문제 없음"))
 
