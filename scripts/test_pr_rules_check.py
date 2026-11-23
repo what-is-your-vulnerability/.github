@@ -141,14 +141,14 @@ class ReviewPing(unittest.TestCase):
 
     def test_text_has_tag_title_and_author(self):
         text = c.build_review_text("org/repo", self.PR)
-        self.assertTrue(text.startswith("*[리뷰 요청]* org/repo"))
+        self.assertTrue(text.startswith("*📩 리뷰 요청* — org/repo"))
         self.assertIn("feat: 기능 [KAN-1]", text)
         self.assertIn("작성자: hj", text)
         self.assertIn("dev ← feature/KAN-1-x", text)
 
     def test_violation_text_has_distinct_tag(self):
-        text = c.build_text("org/repo", "t", "u", ["x"], "[규칙 위반] PR 규칙 확인 필요")
-        self.assertTrue(text.startswith("*[규칙 위반]"))
+        text = c.build_text("org/repo", "t", "u", ["x"], "🚨 규칙 위반 · PR")
+        self.assertTrue(text.startswith("*🚨 규칙 위반 · PR* — org/repo"))
 
 
 class MergeRules(unittest.TestCase):
