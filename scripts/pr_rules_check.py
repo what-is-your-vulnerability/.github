@@ -238,7 +238,7 @@ def review_ping_target(event: dict, pr: dict) -> str | None:
 
 def build_review_text(repo: str, pr: dict) -> str:
     lines = [
-        "*[리뷰 요청]* %s" % repo,
+        "*📩 리뷰 요청* — %s" % repo,
         "<%s|%s>" % (pr.get("html_url"), pr.get("title") or "(제목 없음)"),
         "",
         "• 작성자: %s" % ((pr.get("user") or {}).get("login") or "-"),
@@ -293,7 +293,7 @@ def handle_pull_request(api: Api, event: dict, env: dict) -> int:
         pr["_reviewers"] = reviewers_of(api, number, pr)
         print("병합 점검 #%d: %s" % (number, violations or "문제 없음"))
         if violations:
-            text = build_text(api.repo, pr["title"], pr["html_url"], violations, "[규칙 위반] 병합 규칙")
+            text = build_text(api.repo, pr["title"], pr["html_url"], violations, "🚨 규칙 위반 · 병합")
             send_slack(token, user_map, recipients_of(pr), text, dry)
         return 0
 
@@ -332,7 +332,7 @@ def handle_pull_request(api: Api, event: dict, env: dict) -> int:
     notified = already_notified(api, sha, sig)
     set_status(api, sha, violations, sig, pr["html_url"])
     if violations and not notified:
-        text = build_text(api.repo, pr["title"], pr["html_url"], violations, "[규칙 위반] PR 규칙 확인 필요")
+        text = build_text(api.repo, pr["title"], pr["html_url"], violations, "🚨 규칙 위반 · PR")
         send_slack(token, user_map, recipients_of(pr), text, dry)
     elif violations:
         print("같은 위반으로 이미 알림을 보냄")
@@ -361,7 +361,7 @@ def handle_push(api: Api, event: dict, env: dict) -> int:
     print("push 점검 %s: %s" % (branch, violations or "문제 없음"))
     if violations:
         url = (event.get("head_commit") or {}).get("url") or ""
-        text = build_text(api.repo, "%s push" % branch, url, violations, "[규칙 위반] 브랜치 규칙")
+        text = build_text(api.repo, "%s push" % branch, url, violations, "🚨 규칙 위반 · 브랜치")
         send_slack(
             env.get("SLACK_BOT_TOKEN", ""),
             json.loads(env.get("SLACK_USER_MAP") or "{}"),
