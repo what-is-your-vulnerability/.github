@@ -185,6 +185,53 @@ class Recipients(unittest.TestCase):
         self.assertEqual(c.signature(["a", "b"]), c.signature(["b", "a"]))
         self.assertNotEqual(c.signature(["a"]), c.signature(["b"]))
 
+class MergeApprovals(unittest.TestCase):
+    def rv(self, login, state, sha="h1"):
+        return {"user": {"login": login}, "state": state, "commit_id": sha}
+
+    def test_approved_on_head_counts(self):
+        self.assertEqual(c.approvals_of([self.rv("zzl-hyun", "APPROVED")], "dlkara", "h1"), ["zzl-hyun"])
+
+    def test_author_self_approval_ignored(self):
+        self.assertEqual(c.approvals_of([self.rv("dlkara", "APPROVED")], "dlkara", "h1"), [])
+
+    def test_approval_before_new_commit_does_not_count(self):
+        self.assertEqual(c.approvals_of([self.rv("zzl-hyun", "APPROVED", "old")], "dlkara", "h1"), [])
+
+    def test_changes_requested_after_approval_removes_it(self):
+        rvs = [self.rv("zzl-hyun", "APPROVED"), self.rv("zzl-hyun", "CHANGES_REQUESTED")]
+        self.assertEqual(c.approvals_of(rvs, "dlkara", "h1"), [])
+
+    def test_comment_after_approval_keeps_it(self):
+        rvs = [self.rv("zzl-hyun", "APPROVED"), self.rv("zzl-hyun", "COMMENTED")]
+        self.assertEqual(c.approvals_of(rvs, "dlkara", "h1"), ["zzl-hyun"])
+
+    def test_dev_merge_without_approval_alerts(self):
+        v = c.check_merge_rules("dev", 1, {"test": "success"}, 0)
+        self.assertTrue(any("승인" in x for x in v))
+
+    def test_dev_merge_with_approval_ok(self):
+        self.assertEqual(c.check_merge_rules("dev", 1, {"test": "success"}, 1), [])
+
+    def test_main_merge_does_not_need_approval(self):
+        self.assertEqual(c.check_merge_rules("main", 2, {"test": "success", "main-source-guard": "success"}, 0), [])
+
+    def test_approval_not_checked_when_unknown(self):
+        self.assertEqual(c.check_merge_rules("dev", 1, {"test": "success"}), [])
+
+class PrNumberInMessage(unittest.TestCase):
+    def test_violation_text_has_number(self):
+        txt = c.build_text("org/repo", "feat: x", "https://u/1", ["a"], "🚨 규칙 위반 · PR", 29)
+        self.assertIn("<https://u/1|#29 feat: x>", txt)
+
+    def test_violation_text_without_number_unchanged(self):
+        txt = c.build_text("org/repo", "dev push", "https://u/1", ["a"], "🚨 규칙 위반 · 브랜치")
+        self.assertIn("<https://u/1|dev push>", txt)
+
+    def test_review_text_has_number(self):
+        pr = {"number": 7, "title": "feat: y", "html_url": "https://u/7", "user": {"login": "a"}, "base": {"ref": "dev"}, "head": {"ref": "feature/1-y"}}
+        self.assertIn("<https://u/7|#7 feat: y>", c.build_review_text("org/repo", pr))
+
 
 if __name__ == "__main__":
     unittest.main()
