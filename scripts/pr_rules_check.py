@@ -15,6 +15,7 @@ PR 작성자·assignee·reviewer에게만 Slack DM으로 알린다. GitHub Actio
   GRACE_SECONDS       이벤트 뒤 기다릴 시간(기본 120). 작성자가 assignee·reviewer를 바로 붙일 시간을 준다
   IGNORE_LOGINS       점검을 건너뛸 계정(쉼표 구분, 기본 dependabot[bot],taki-jenkins)
   PUSH_CHECK=0        push 점검을 끈다(직접 push가 정상인 저장소)
+  (병합 점검) dev 병합은 마지막 커밋 기준 팀원 1명 이상의 승인이 있어야 한다. 없으면 알린다
 
 PR 제목·본문·브랜치 이름은 작성자가 정하는 값이다. 셸에 넣지 않고 이 스크립트가 JSON으로만 읽는다.
 """
@@ -114,9 +115,34 @@ def check_open_rules(pr: dict, reviewer_candidates: list[str] | None = None) -> 
     return out
 
 
-def check_merge_rules(base: str, parent_count: int | None, check_conclusions: dict[str, str | None]) -> list[str]:
-    """병합된 PR 규칙. 룰셋의 필수 검사와 병합 방식 제한을 사후에 확인한다."""
+def approvals_of(reviews: list[dict], author: str, head_sha: str) -> list[str]:
+    """병합 시점의 유효한 승인자. 사람마다 가장 나중의 승인·변경 요청·기각만 보고, 마지막 커밋(head_sha)에 한 승인만 센다.
+
+    작성자 본인의 승인은 세지 않는다. 승인 뒤 새 커밋을 push하면 그 승인은 빠진다(팀 규칙: 다시 승인)."""
+    latest: dict[str, dict] = {}
+    for rv in reviews:
+        login = (rv.get("user") or {}).get("login")
+        if not login or rv.get("state") in (None, "COMMENTED", "PENDING"):
+            continue
+        latest[login] = rv
+    me = (author or "").lower()
+    return sorted(
+        login
+        for login, rv in latest.items()
+        if rv.get("state") == "APPROVED" and login.lower() != me and rv.get("commit_id") == head_sha
+    )
+
+
+def check_merge_rules(
+    base: str,
+    parent_count: int | None,
+    check_conclusions: dict[str, str | None],
+    approvals: int | None = None,
+) -> list[str]:
+    """병합된 PR 규칙. 룰셋의 필수 검사·병합 방식 제한·승인 수를 사후에 확인한다. approvals가 None이면 승인은 보지 않는다."""
     out: list[str] = []
+    if base == "dev" and approvals is not None and approvals < 1:
+        out.append("dev 병합에 리뷰 승인(팀원 1명 이상)이 없음. 승인 뒤 새 커밋을 push했다면 다시 승인을 받아야 함")
     required = ["test"] + (["main-source-guard"] if base == "main" else [])
     for name in required:
         res = check_conclusions.get(name)
@@ -218,8 +244,14 @@ def send_slack(token: str, user_map: dict[str, str], logins: list[str], text: st
         print("  DM %s: %s" % (login, "전송" if ok else "실패(응답 ok=false)"))
 
 
-def build_text(repo: str, title: str, url: str, violations: list[str], heading: str) -> str:
-    lines = ["*%s* — %s" % (heading, repo), "<%s|%s>" % (url, title or "(제목 없음)"), ""]
+def pr_label(number: int | None, title: str | None) -> str:
+    """링크 글자. PR 번호가 있으면 앞에 `#번호`를 붙인다."""
+    t = title or "(제목 없음)"
+    return "#%s %s" % (number, t) if number else t
+
+
+def build_text(repo: str, title: str, url: str, violations: list[str], heading: str, number: int | None = None) -> str:
+    lines = ["*%s* — %s" % (heading, repo), "<%s|%s>" % (url, pr_label(number, title)), ""]
     lines += ["• " + v for v in violations]
     return "\n".join(lines)
 
@@ -239,7 +271,7 @@ def review_ping_target(event: dict, pr: dict) -> str | None:
 def build_review_text(repo: str, pr: dict) -> str:
     lines = [
         "*📩 리뷰 요청* — %s" % repo,
-        "<%s|%s>" % (pr.get("html_url"), pr.get("title") or "(제목 없음)"),
+        "<%s|%s>" % (pr.get("html_url"), pr_label(pr.get("number"), pr.get("title"))),
         "",
         "• 작성자: %s" % ((pr.get("user") or {}).get("login") or "-"),
         "• %s ← %s" % ((pr.get("base") or {}).get("ref") or "-", (pr.get("head") or {}).get("ref") or "-"),
@@ -289,11 +321,15 @@ def handle_pull_request(api: Api, event: dict, env: dict) -> int:
         parents = None
         if merge_sha:
             parents = len((api.get("/commits/%s" % merge_sha) or {}).get("parents", []))
-        violations = check_merge_rules(base, parents, check_conclusions(api, pr["head"]["sha"]))
+        approvals = None
+        if base == "dev":
+            reviews = api.get("/pulls/%d/reviews?per_page=100" % number) or []
+            approvals = len(approvals_of(reviews, (pr.get("user") or {}).get("login", ""), pr["head"]["sha"]))
+        violations = check_merge_rules(base, parents, check_conclusions(api, pr["head"]["sha"]), approvals)
         pr["_reviewers"] = reviewers_of(api, number, pr)
         print("병합 점검 #%d: %s" % (number, violations or "문제 없음"))
         if violations:
-            text = build_text(api.repo, pr["title"], pr["html_url"], violations, "🚨 규칙 위반 · 병합")
+            text = build_text(api.repo, pr["title"], pr["html_url"], violations, "🚨 규칙 위반 · 병합", number)
             send_slack(token, user_map, recipients_of(pr), text, dry)
         return 0
 
@@ -332,7 +368,7 @@ def handle_pull_request(api: Api, event: dict, env: dict) -> int:
     notified = already_notified(api, sha, sig)
     set_status(api, sha, violations, sig, pr["html_url"])
     if violations and not notified:
-        text = build_text(api.repo, pr["title"], pr["html_url"], violations, "🚨 규칙 위반 · PR")
+        text = build_text(api.repo, pr["title"], pr["html_url"], violations, "🚨 규칙 위반 · PR", number)
         send_slack(token, user_map, recipients_of(pr), text, dry)
     elif violations:
         print("같은 위반으로 이미 알림을 보냄")
