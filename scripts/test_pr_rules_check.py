@@ -92,6 +92,37 @@ class OpenRules(unittest.TestCase):
         self.assertIn("Reviewers 미지정", v)
 
 
+class ReviewerAssigneeRules(unittest.TestCase):
+    CAND = ["superjoung", "shinsoyoung1085-netizen"]
+
+    def test_reviewer_in_candidates_passes_and_extras_allowed(self):
+        p = pr(_reviewers=["superjoung", "someone-else"])
+        self.assertEqual(c.check_open_rules(p, self.CAND), [])
+
+    def test_only_outside_reviewer_fails(self):
+        v = c.check_open_rules(pr(_reviewers=["someone-else"]), self.CAND)
+        self.assertTrue(any("지정 대상 중 1명 이상" in x for x in v))
+
+    def test_no_reviewer_mentions_candidates(self):
+        v = c.check_open_rules(pr(_reviewers=[]), self.CAND)
+        self.assertTrue(any("Reviewers 미지정" in x and "superjoung" in x for x in v))
+
+    def test_author_excluded_from_candidates(self):
+        p = pr(user={"login": "zzl-hyun"}, assignees=[{"login": "zzl-hyun"}], _reviewers=["anyone"])
+        self.assertEqual(c.check_open_rules(p, ["zzl-hyun"]), [])
+
+    def test_candidate_is_case_insensitive(self):
+        self.assertEqual(c.check_open_rules(pr(_reviewers=["SuperJoung"]), self.CAND), [])
+
+    def test_assignee_must_include_author(self):
+        v = c.check_open_rules(pr(user={"login": "hj"}, assignees=[{"login": "dlkara"}]), self.CAND)
+        self.assertTrue(any("Assignees에 작성자" in x for x in v))
+
+    def test_assignee_author_with_extras_passes(self):
+        p = pr(user={"login": "hj"}, assignees=[{"login": "hj"}, {"login": "dlkara"}], _reviewers=["superjoung"])
+        self.assertEqual(c.check_open_rules(p, self.CAND), [])
+
+
 class MergeRules(unittest.TestCase):
     def test_squash_on_dev_with_passing_test(self):
         self.assertEqual(c.check_merge_rules("dev", 1, {"test": "success"}), [])
