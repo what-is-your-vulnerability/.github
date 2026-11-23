@@ -43,7 +43,6 @@ WATCH_ACTIONS = {
     "ready_for_review",
     "assigned",
     "unassigned",
-    "review_requested",
     "review_request_removed",
 }
 PROTECTED = ("dev", "main")
@@ -225,6 +224,29 @@ def build_text(repo: str, title: str, url: str, violations: list[str], heading: 
     return "\n".join(lines)
 
 
+def review_ping_target(event: dict, pr: dict) -> str | None:
+    """리뷰 요청을 받은 사람의 로그인. 팀 요청, 작성자 본인, Draft는 None."""
+    if pr.get("draft"):
+        return None
+    login = (event.get("requested_reviewer") or {}).get("login")
+    if not login:
+        return None
+    if login.lower() == ((pr.get("user") or {}).get("login") or "").lower():
+        return None
+    return login
+
+
+def build_review_text(repo: str, pr: dict) -> str:
+    lines = [
+        "*[리뷰 요청]* %s" % repo,
+        "<%s|%s>" % (pr.get("html_url"), pr.get("title") or "(제목 없음)"),
+        "",
+        "• 작성자: %s" % ((pr.get("user") or {}).get("login") or "-"),
+        "• %s ← %s" % ((pr.get("base") or {}).get("ref") or "-", (pr.get("head") or {}).get("ref") or "-"),
+    ]
+    return "\n".join(lines)
+
+
 def already_notified(api: Api, sha: str, sig: str) -> bool:
     try:
         for st in (api.get("/commits/%s/status" % sha) or {}).get("statuses", []):
@@ -271,8 +293,20 @@ def handle_pull_request(api: Api, event: dict, env: dict) -> int:
         pr["_reviewers"] = reviewers_of(api, number, pr)
         print("병합 점검 #%d: %s" % (number, violations or "문제 없음"))
         if violations:
-            text = build_text(api.repo, pr["title"], pr["html_url"], violations, "병합 규칙 위반")
+            text = build_text(api.repo, pr["title"], pr["html_url"], violations, "[규칙 위반] 병합 규칙")
             send_slack(token, user_map, recipients_of(pr), text, dry)
+        return 0
+
+    if action == "review_requested":
+        # 기다리지 않고 바로 요청받은 사람에게만 알린다. 규칙 점검은 하지 않는다(같은 PR의 다른 이벤트가 최신 상태로 점검).
+        if env.get("REVIEW_PING") == "0":
+            return 0
+        target = review_ping_target(event, pr)
+        if target:
+            print("리뷰 요청 알림 #%d -> %s" % (number, target))
+            send_slack(token, user_map, [target], build_review_text(api.repo, pr), dry)
+        else:
+            print("리뷰 요청 알림 대상 없음(팀 요청, 작성자 본인 또는 Draft)")
         return 0
 
     if action not in WATCH_ACTIONS:
@@ -298,7 +332,7 @@ def handle_pull_request(api: Api, event: dict, env: dict) -> int:
     notified = already_notified(api, sha, sig)
     set_status(api, sha, violations, sig, pr["html_url"])
     if violations and not notified:
-        text = build_text(api.repo, pr["title"], pr["html_url"], violations, "PR 규칙 확인 필요")
+        text = build_text(api.repo, pr["title"], pr["html_url"], violations, "[규칙 위반] PR 규칙 확인 필요")
         send_slack(token, user_map, recipients_of(pr), text, dry)
     elif violations:
         print("같은 위반으로 이미 알림을 보냄")
@@ -327,7 +361,7 @@ def handle_push(api: Api, event: dict, env: dict) -> int:
     print("push 점검 %s: %s" % (branch, violations or "문제 없음"))
     if violations:
         url = (event.get("head_commit") or {}).get("url") or ""
-        text = build_text(api.repo, "%s push" % branch, url, violations, "브랜치 규칙 위반")
+        text = build_text(api.repo, "%s push" % branch, url, violations, "[규칙 위반] 브랜치 규칙")
         send_slack(
             env.get("SLACK_BOT_TOKEN", ""),
             json.loads(env.get("SLACK_USER_MAP") or "{}"),

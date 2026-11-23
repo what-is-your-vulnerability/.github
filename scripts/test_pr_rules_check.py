@@ -123,6 +123,34 @@ class ReviewerAssigneeRules(unittest.TestCase):
         self.assertEqual(c.check_open_rules(p, self.CAND), [])
 
 
+class ReviewPing(unittest.TestCase):
+    PR = {"html_url": "https://example.invalid/pr/1", "title": "feat: 기능 [KAN-1]", "user": {"login": "hj"},
+          "base": {"ref": "dev"}, "head": {"ref": "feature/KAN-1-x"}, "draft": False}
+
+    def test_target_is_requested_reviewer(self):
+        self.assertEqual(c.review_ping_target({"requested_reviewer": {"login": "zzl-hyun"}}, self.PR), "zzl-hyun")
+
+    def test_team_request_has_no_target(self):
+        self.assertIsNone(c.review_ping_target({"requested_team": {"slug": "infra"}}, self.PR))
+
+    def test_author_has_no_target(self):
+        self.assertIsNone(c.review_ping_target({"requested_reviewer": {"login": "HJ"}}, self.PR))
+
+    def test_draft_has_no_target(self):
+        self.assertIsNone(c.review_ping_target({"requested_reviewer": {"login": "zzl-hyun"}}, dict(self.PR, draft=True)))
+
+    def test_text_has_tag_title_and_author(self):
+        text = c.build_review_text("org/repo", self.PR)
+        self.assertTrue(text.startswith("*[리뷰 요청]* org/repo"))
+        self.assertIn("feat: 기능 [KAN-1]", text)
+        self.assertIn("작성자: hj", text)
+        self.assertIn("dev ← feature/KAN-1-x", text)
+
+    def test_violation_text_has_distinct_tag(self):
+        text = c.build_text("org/repo", "t", "u", ["x"], "[규칙 위반] PR 규칙 확인 필요")
+        self.assertTrue(text.startswith("*[규칙 위반]"))
+
+
 class MergeRules(unittest.TestCase):
     def test_squash_on_dev_with_passing_test(self):
         self.assertEqual(c.check_merge_rules("dev", 1, {"test": "success"}), [])
