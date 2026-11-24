@@ -63,7 +63,14 @@ class OpenRules(unittest.TestCase):
     def test_main_only_from_dev(self):
         v = c.check_open_rules(pr(base={"ref": "main"}, head={"ref": "chore/x"}))
         self.assertTrue(any("dev에서만" in x for x in v))
-        self.assertEqual(c.check_open_rules(pr(base={"ref": "main"}, head={"ref": "dev"})), ["브랜치 이름: `종류/번호-설명` (종류는 feature, fix, refactor, docs, chore). 현재 `dev`"])
+
+    def test_dev_to_main_skips_branch_name(self):
+        self.assertEqual(c.check_open_rules(pr(base={"ref": "main"}, head={"ref": "dev"})), [])
+
+    def test_dev_to_dev_like_names_still_checked(self):
+        # dev 이름이어도 main이 아닌 곳으로 가면 브랜치 규칙을 본다
+        v = c.check_open_rules(pr(base={"ref": "release"}, head={"ref": "dev"}))
+        self.assertTrue(any("브랜치 이름" in x for x in v))
 
     def test_missing_section(self):
         v = c.check_open_rules(pr(body=GOOD_BODY.replace("## 검증", "## 확인")))
@@ -90,6 +97,73 @@ class OpenRules(unittest.TestCase):
         v = c.check_open_rules(pr(assignees=[], _reviewers=[]))
         self.assertIn("Assignees 미지정", v)
         self.assertIn("Reviewers 미지정", v)
+
+
+FRONT_TEMPLATE = """## 변경 요약
+
+- 변경 내용·이유:
+
+## Figma 링크
+
+- 공개 승인된 변경 프레임 또는 해당 없음:
+
+## PC·모바일 전후 이미지
+
+<!-- 표를 복제하세요.
+## 주석 안 제목은 세지 않음 -->
+
+| ① [변경 항목] | 변경 전 | 변경 후 |
+| --- | --- | --- |
+
+## 검증 결과
+
+```text
+## 코드 블록 안 제목도 세지 않음
+```
+"""
+FRONT_SECTIONS = ("## 변경 요약", "## Figma 링크", "## PC·모바일 전후 이미지", "## 검증 결과")
+FRONT_BODY = FRONT_TEMPLATE.replace("- 변경 내용·이유:", "- 변경 내용·이유: 배포 반영")
+
+
+class RepoTemplateSections(unittest.TestCase):
+    def test_sections_from_template(self):
+        self.assertEqual(c.template_sections(FRONT_TEMPLATE), FRONT_SECTIONS)
+
+    def test_org_template_gives_org_sections(self):
+        with open(__file__.replace("scripts/test_pr_rules_check.py", "PULL_REQUEST_TEMPLATE.md"), encoding="utf-8") as f:
+            self.assertEqual(c.template_sections(f.read()), c.SECTIONS)
+
+    def test_front_form_pr_passes_with_front_sections(self):
+        p = pr(body=FRONT_BODY, head={"ref": "feature/KAN-70-login"})
+        self.assertEqual(c.check_open_rules(p, None, FRONT_SECTIONS), [])
+
+    def test_front_form_dev_to_main_passes(self):
+        p = pr(body=FRONT_BODY, base={"ref": "main"}, head={"ref": "dev"})
+        self.assertEqual(c.check_open_rules(p, None, FRONT_SECTIONS), [])
+
+    def test_front_form_missing_section(self):
+        p = pr(body=FRONT_BODY.replace("## Figma 링크", "## 디자인"))
+        v = c.check_open_rules(p, None, FRONT_SECTIONS)
+        self.assertEqual(v, ["PR 템플릿 섹션 누락: Figma 링크"])
+
+    def test_front_repo_does_not_require_org_sections(self):
+        v = c.check_open_rules(pr(body=FRONT_BODY), None, FRONT_SECTIONS)
+        self.assertFalse(any("관련 작업" in x or "변경 내용" in x for x in v))
+
+    def test_org_form_body_fails_in_front_repo(self):
+        v = c.check_open_rules(pr(), None, FRONT_SECTIONS)
+        self.assertTrue(any("섹션 누락" in x and "Figma 링크" in x for x in v))
+
+    def test_server_form_still_checks_org_fields(self):
+        # 저장소 템플릿이 없거나(None) 공통 양식과 같으면 세부 항목까지 본다
+        body = GOOD_BODY.replace("- 변경 이유: 이유를 적음", "- 변경 이유:")
+        for sections in (None, (), c.SECTIONS):
+            v = c.check_open_rules(pr(body=body), None, sections)
+            self.assertTrue(any("변경 이유" in x for x in v), sections)
+
+    def test_front_form_in_org_repo_fails(self):
+        v = c.check_open_rules(pr(body=FRONT_BODY))
+        self.assertTrue(any("섹션 누락" in x and "관련 작업" in x and "변경 내용" in x for x in v))
 
 
 class ReviewerAssigneeRules(unittest.TestCase):
@@ -231,6 +305,62 @@ class PrNumberInMessage(unittest.TestCase):
     def test_review_text_has_number(self):
         pr = {"number": 7, "title": "feat: y", "html_url": "https://u/7", "user": {"login": "a"}, "base": {"ref": "dev"}, "head": {"ref": "feature/1-y"}}
         self.assertIn("<https://u/7|#7 feat: y>", c.build_review_text("org/repo", pr))
+
+
+class FakeApi:
+    """handle_pull_request용 가짜 API. 상태 기록과 Slack 호출만 모은다."""
+
+    repo = "org/repo"
+
+    def __init__(self, pr_obj, statuses=None):
+        self.pr = pr_obj
+        self.statuses = statuses or {}
+        self.posted = []
+
+    def get(self, path):
+        if path.startswith("/pulls/") and path.endswith("/reviews?per_page=100"):
+            return []
+        if path.startswith("/pulls/"):
+            return self.pr
+        if path.startswith("/contents/"):
+            raise c.urllib.error.HTTPError(path, 404, "Not Found", None, None)
+        if path.startswith("/commits/") and path.endswith("/status"):
+            sha = path.split("/")[2]
+            return {"statuses": self.statuses.get(sha, [])}
+        raise AssertionError(path)
+
+    def post(self, path, data):
+        self.posted.append((path, data))
+
+
+class SynchronizeEvent(unittest.TestCase):
+    def run_event(self, before_statuses):
+        bad = pr(number=5, state="open", draft=False, html_url="u", user={"login": "dlkara"},
+                 head={"ref": "bad-name", "sha": "new"})
+        api = FakeApi(bad, before_statuses)
+        sent = []
+        orig = c.send_slack
+        c.send_slack = lambda *a: sent.append(a)
+        try:
+            c.handle_pull_request(api, {"action": "synchronize", "before": "old", "pull_request": bad},
+                                  {"GRACE_SECONDS": "0", "SLACK_USER_MAP": "{}"})
+        finally:
+            c.send_slack = orig
+        return api, sent
+
+    def test_status_set_on_new_head(self):
+        api, _ = self.run_event({})
+        self.assertEqual(api.posted[0][0], "/statuses/new")
+        self.assertEqual(api.posted[0][1]["state"], "failure")
+
+    def test_no_repeat_dm_when_previous_head_notified(self):
+        sig = c.signature(c.check_open_rules(pr(head={"ref": "bad-name"}, user={"login": "dlkara"}, _reviewers=[])))
+        _, sent = self.run_event({"old": [{"context": "pr-rules", "description": "[%s] x" % sig}]})
+        self.assertEqual(sent, [])
+
+    def test_dm_when_previous_head_has_no_status(self):
+        _, sent = self.run_event({})
+        self.assertEqual(len(sent), 1)
 
 
 if __name__ == "__main__":

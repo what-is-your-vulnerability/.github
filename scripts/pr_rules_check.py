@@ -15,6 +15,12 @@ PR 작성자·assignee·reviewer에게만 Slack DM으로 알린다. GitHub Actio
   GRACE_SECONDS       이벤트 뒤 기다릴 시간(기본 120). 작성자가 assignee·reviewer를 바로 붙일 시간을 준다
   IGNORE_LOGINS       점검을 건너뛸 계정(쉼표 구분, 기본 dependabot[bot],taki-jenkins)
   PUSH_CHECK=0        push 점검을 끈다(직접 push가 정상인 저장소)
+  (템플릿 섹션) 저장소에 자기 PR 템플릿(.github/pull_request_template.md 등)이 있으면 그 파일의 `## ` 제목을
+                필수 섹션으로 본다. base 브랜치에서 먼저 찾고, 없으면 기본 브랜치(dev)에서 찾는다(첫 dev → main PR처럼
+                main에 아직 템플릿이 없을 때). PR head는 작성자가 바꿀 수 있으므로 보지 않는다.
+                둘 다 없으면 조직 공통 양식(SECTIONS)과 그 세부 항목을 본다
+  (synchronize) 새 커밋이 올라오면 새 head에 pr-rules 상태를 다시 남긴다. 이전 head에 같은 위반으로
+                남긴 상태가 있으면(이미 알림) DM을 다시 보내지 않는다
   (병합 점검) dev 병합은 마지막 커밋 기준 팀원 1명 이상의 승인이 있어야 한다. 없으면 알린다
 
 PR 제목·본문·브랜치 이름은 작성자가 정하는 값이다. 셸에 넣지 않고 이 스크립트가 JSON으로만 읽는다.
@@ -22,6 +28,7 @@ PR 제목·본문·브랜치 이름은 작성자가 정하는 값이다. 셸에 
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -29,6 +36,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 TITLE_KINDS = ("feat", "fix", "refactor", "chore", "ci", "style", "docs", "test")
@@ -45,7 +53,17 @@ WATCH_ACTIONS = {
     "assigned",
     "unassigned",
     "review_request_removed",
+    "synchronize",
 }
+# 저장소 자체 PR 템플릿 위치. GitHub이 찾는 순서와 같게 둔다.
+TEMPLATE_PATHS = (
+    ".github/pull_request_template.md",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    "pull_request_template.md",
+    "PULL_REQUEST_TEMPLATE.md",
+    "docs/pull_request_template.md",
+    "docs/PULL_REQUEST_TEMPLATE.md",
+)
 PROTECTED = ("dev", "main")
 
 
@@ -70,8 +88,32 @@ def field_filled(body: str, label: str) -> bool:
     return False
 
 
-def check_open_rules(pr: dict, reviewer_candidates: list[str] | None = None) -> list[str]:
+def template_sections(text: str) -> tuple[str, ...]:
+    """PR 템플릿의 `## ` 제목 줄. HTML 주석과 코드 블록 안은 뺀다. 같은 제목은 한 번만."""
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    out: list[str] = []
+    fence = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        m = re.match(r"^##\s+(\S.*?)\s*$", line)
+        if m and not fence:
+            h = "## " + m.group(1)
+            if h not in out:
+                out.append(h)
+    return tuple(out)
+
+
+def check_open_rules(
+    pr: dict,
+    reviewer_candidates: list[str] | None = None,
+    sections: tuple[str, ...] | None = None,
+) -> list[str]:
     """열린 PR의 형식 규칙. 어긴 항목을 '무엇을 어떻게 고치면 되는지'와 함께 돌려준다.
+
+    sections는 저장소 자체 템플릿의 필수 섹션(`## 제목`). None이거나 비어 있으면 조직 공통 양식(SECTIONS)을 보고,
+    그때만 공통 양식의 세부 항목(Jira 번호, 변경 이유 등)을 본다.
 
     reviewer_candidates가 있으면 그중 1명 이상이 reviewer에 있어야 한다(작성자 본인은 후보에서 제외). 그 밖의 사람은 자유롭게 추가할 수 있다."""
     out: list[str] = []
@@ -82,15 +124,18 @@ def check_open_rules(pr: dict, reviewer_candidates: list[str] | None = None) -> 
 
     if not TITLE_RE.match(title):
         out.append("제목 형식: `종류: 변경 내용 [KAN-번호]` (종류는 %s)" % ", ".join(TITLE_KINDS))
-    if not BRANCH_RE.match(head):
+    # main으로 가는 PR은 dev에서만 보내므로(아래 규칙) dev → main은 브랜치 이름 규칙 대상이 아니다.
+    if not (base == "main" and head == "dev") and not BRANCH_RE.match(head):
         out.append("브랜치 이름: `종류/번호-설명` (종류는 %s). 현재 `%s`" % (", ".join(BRANCH_KINDS), head))
     if base == "main" and head != "dev":
         out.append("main으로 가는 PR은 dev에서만 보낼 수 있음. 현재 출처 `%s`" % head)
 
-    missing = [s for s in SECTIONS if s not in body]
+    org_form = not sections or tuple(sections) == SECTIONS
+    required = SECTIONS if org_form else tuple(sections)
+    missing = [s for s in required if s not in body]
     if missing:
         out.append("PR 템플릿 섹션 누락: " + ", ".join(m.replace("## ", "") for m in missing))
-    else:
+    elif org_form:
         if not re.search(r"Jira:.*KAN-\d+", body):
             out.append("관련 작업의 Jira에 `KAN-번호`가 없음")
         for label in ("변경 이유", "실행한 명령", "확인한 결과"):
@@ -201,6 +246,45 @@ def reviewers_of(api: Api, number: int, pr: dict) -> list[str]:
         if login and login != (pr.get("user") or {}).get("login"):
             names.append(login)
     return sorted(set(names))
+
+
+def repo_template_sections(api: Api, refs: list[str]) -> tuple[str, ...] | None:
+    """저장소 자체 PR 템플릿의 섹션. refs를 차례로 본다. 없거나 읽지 못하면 None(조직 공통 양식을 쓴다)."""
+    seen: list[str] = []
+    for ref in refs:
+        if not ref or ref in seen:
+            continue
+        seen.append(ref)
+        found = _template_sections_at(api, ref)
+        if found is not False:
+            return found
+    return None
+
+
+def _template_sections_at(api: Api, ref: str):
+    """ref의 템플릿 섹션. 파일이 없으면 False(다음 ref를 본다), 읽기 오류면 None(공통 양식으로 점검)."""
+    for path in TEMPLATE_PATHS:
+        try:
+            meta = api.get("/contents/%s?ref=%s" % (path, urllib.parse.quote(ref, safe="")))
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                continue
+            print("PR 템플릿 읽기 실패(%s): HTTP %s, 공통 양식으로 점검" % (path, e.code))
+            return None
+        except urllib.error.URLError as e:
+            print("PR 템플릿 읽기 실패(%s): %s, 공통 양식으로 점검" % (path, type(e).__name__))
+            return None
+        if not isinstance(meta, dict) or meta.get("encoding") != "base64":
+            continue
+        try:
+            text = base64.b64decode(meta.get("content") or "").decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            continue
+        found = template_sections(text)
+        if found:
+            print("저장소 PR 템플릿 기준 섹션(%s@%s): %s" % (path, ref, ", ".join(h[3:] for h in found)))
+            return found
+    return False
 
 
 def check_conclusions(api: Api, sha: str) -> dict[str, str | None]:
@@ -360,12 +444,18 @@ def handle_pull_request(api: Api, event: dict, env: dict) -> int:
         return 0
     pr["_reviewers"] = reviewers_of(api, number, pr)
     candidates = [x.strip() for x in (env.get("REVIEWER_CANDIDATES") or "").split(",") if x.strip()]
-    violations = check_open_rules(pr, candidates)
+    base_info = pr.get("base") or {}
+    sections = repo_template_sections(api, [base_info.get("ref") or "", (base_info.get("repo") or {}).get("default_branch") or ""])
+    violations = check_open_rules(pr, candidates, sections)
     sig = signature(violations)
     print("점검 #%d: %s" % (number, violations or "문제 없음"))
 
     sha = pr["head"]["sha"]
     notified = already_notified(api, sha, sig)
+    before = event.get("before") if action == "synchronize" else None
+    if not notified and before:
+        # 커밋 push로는 위반이 거의 바뀌지 않는다. 이전 head에서 같은 위반을 이미 알렸으면 다시 보내지 않는다.
+        notified = already_notified(api, before, sig)
     set_status(api, sha, violations, sig, pr["html_url"])
     if violations and not notified:
         text = build_text(api.repo, pr["title"], pr["html_url"], violations, "🚨 규칙 위반 · PR", number)
